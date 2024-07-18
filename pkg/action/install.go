@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"net/url"
 	"os"
 	"path"
@@ -553,8 +554,10 @@ func (i *Install) createRelease(chrt *chart.Chart, rawVals map[string]interface{
 			LastDeployed:  ts,
 			Status:        release.StatusUnknown,
 		},
-		Version: 1,
-		Labels:  labels,
+		Version:    1,
+		Labels:     labels,
+		LockedTill: ts.Add(i.Timeout),
+		SessionID:  string(uuid.NewUUID()),
 	}
 }
 

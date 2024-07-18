@@ -101,6 +101,7 @@ func newUpgradeCmd(cfg *action.Configuration, out io.Writer) *cobra.Command {
 		},
 		RunE: func(_ *cobra.Command, args []string) error {
 			client.Namespace = settings.Namespace()
+			releaseName := args[0]
 
 			registryClient, err := newRegistryClient(client.CertFile, client.KeyFile, client.CaFile,
 				client.InsecureSkipTLSverify, client.PlainHTTP)
@@ -120,12 +121,16 @@ func newUpgradeCmd(cfg *action.Configuration, out io.Writer) *cobra.Command {
 			if client.Install {
 				// If a release does not exist, install it.
 				histClient := action.NewHistory(cfg)
+				releaseExistsAndIsLocked, err := histClient.IsLocked(releaseName)
+				if err != nil {
+					return fmt.Errorf("could not determine if the current release is locked: %s", err)
+				}
 				histClient.Max = 1
-				versions, err := histClient.Run(args[0])
-				if err == driver.ErrReleaseNotFound || isReleaseUninstalled(versions) {
+				versions, err := histClient.Run(releaseName)
+				if (errors.Is(err, driver.ErrReleaseNotFound) || errors.Is(err, driver.ErrNoDeployedReleases) || isReleaseUninstalled(versions)) && !releaseExistsAndIsLocked {
 					// Only print this to stdout for table output
 					if outfmt == output.Table {
-						fmt.Fprintf(out, "Release %q does not exist. Installing it now.\n", args[0])
+						fmt.Fprintf(out, "Release %q does not exist. Installing it now.\n", releaseName)
 					}
 					instClient := action.NewInstall(cfg)
 					instClient.CreateNamespace = createNamespace
@@ -225,6 +230,8 @@ func newUpgradeCmd(cfg *action.Configuration, out io.Writer) *cobra.Command {
 			ctx := context.Background()
 			ctx, cancel := context.WithCancel(ctx)
 
+			var rel *release.Release
+
 			// Set up channel on which to send signal notifications.
 			// We must use a buffered channel or risk missing the signal
 			// if we're not ready to receive when the signal is sent.
@@ -232,18 +239,21 @@ func newUpgradeCmd(cfg *action.Configuration, out io.Writer) *cobra.Command {
 			signal.Notify(cSignal, os.Interrupt, syscall.SIGTERM)
 			go func() {
 				<-cSignal
-				fmt.Fprintf(out, "Release %s has been cancelled.\n", args[0])
 				cancel()
+				if rel != nil {
+					rel.SetStatus(release.StatusFailed, "cancelled by SIGTERM")
+				}
+				_, _ = fmt.Fprintf(out, "Release %s has been cancelled.\n", releaseName)
 			}()
 
-			rel, err := client.RunWithContext(ctx, args[0], ch, vals)
+			rel, err = client.RunWithContext(ctx, releaseName, ch, vals)
 
 			if err != nil {
 				return errors.Wrap(err, "UPGRADE FAILED")
 			}
 
 			if outfmt == output.Table {
-				fmt.Fprintf(out, "Release %q has been upgraded. Happy Helming!\n", args[0])
+				fmt.Fprintf(out, "Release %q has been upgraded. Happy Helming!\n", releaseName)
 			}
 
 			return outfmt.Write(out, &statusPrinter{rel, settings.Debug, false, false, false, client.HideNotes})

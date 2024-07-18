@@ -90,6 +90,8 @@ type releaseInfo struct {
 	Chart       string        `json:"chart"`
 	AppVersion  string        `json:"app_version"`
 	Description string        `json:"description"`
+	LockedTill  helmtime.Time `json:"locked_till"`
+	SessionID   string        `json:"session_id"`
 }
 
 type releaseHistory []releaseInfo
@@ -141,6 +143,8 @@ func getReleaseHistory(rls []*release.Release) (history releaseHistory) {
 		v := r.Version
 		d := r.Info.Description
 		a := formatAppVersion(r.Chart)
+		l := r.LockedTill
+		se := r.SessionID
 
 		rInfo := releaseInfo{
 			Revision:    v,
@@ -148,6 +152,8 @@ func getReleaseHistory(rls []*release.Release) (history releaseHistory) {
 			Chart:       c,
 			AppVersion:  a,
 			Description: d,
+			LockedTill:  l,
+			SessionID:   se,
 		}
 		if !r.Info.LastDeployed.IsZero() {
 			rInfo.Updated = r.Info.LastDeployed

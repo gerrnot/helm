@@ -26,6 +26,7 @@ import (
 
 	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/cli-runtime/pkg/resource"
 
 	"helm.sh/helm/v3/pkg/chart"
@@ -205,14 +206,14 @@ func (u *Upgrade) prepareUpgrade(name string, chart *chart.Chart, vals map[strin
 	lastRelease, err := u.cfg.Releases.Last(name)
 	if err != nil {
 		// to keep existing behavior of returning the "%q has no deployed releases" error when an existing release does not exist
-		if errors.Is(err, driver.ErrReleaseNotFound) {
+		if errors.Is(err, driver.ErrReleaseNotFound) && !u.Install {
 			return nil, nil, driver.NewErrNoDeployedReleases(name)
 		}
 		return nil, nil, err
 	}
 
-	// Concurrent `helm upgrade`s will either fail here with `errPending` or when creating the release with "already exists". This should act as a pessimistic lock.
-	if lastRelease.Info.Status.IsPending() {
+	// Concurrent `helm upgrade`s will fail as long as the release has an active lock
+	if lastRelease.Info.Status.IsPending() && lastRelease.IsLocked() {
 		return nil, nil, errPending
 	}
 
@@ -225,7 +226,7 @@ func (u *Upgrade) prepareUpgrade(name string, chart *chart.Chart, vals map[strin
 		currentRelease, err = u.cfg.Releases.Deployed(name)
 		if err != nil {
 			if errors.Is(err, driver.ErrNoDeployedReleases) &&
-				(lastRelease.Info.Status == release.StatusFailed || lastRelease.Info.Status == release.StatusSuperseded) {
+				(lastRelease.Info.Status == release.StatusFailed || lastRelease.Info.Status == release.StatusSuperseded || lastRelease.Info.Status.IsPending()) {
 				currentRelease = lastRelease
 			} else {
 				return nil, nil, err
@@ -290,10 +291,12 @@ func (u *Upgrade) prepareUpgrade(name string, chart *chart.Chart, vals map[strin
 			Status:        release.StatusPendingUpgrade,
 			Description:   "Preparing upgrade", // This should be overwritten later.
 		},
-		Version:  revision,
-		Manifest: manifestDoc.String(),
-		Hooks:    hooks,
-		Labels:   mergeCustomLabels(lastRelease.Labels, u.Labels),
+		Version:    revision,
+		Manifest:   manifestDoc.String(),
+		Hooks:      hooks,
+		Labels:     mergeCustomLabels(lastRelease.Labels, u.Labels),
+		LockedTill: Timestamper().Add(u.Timeout),
+		SessionID:  string(uuid.NewUUID()),
 	}
 
 	if len(notesTxt) > 0 {

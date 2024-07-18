@@ -49,6 +49,7 @@ import (
 //
 // By default, this is a time.Time function from the Helm time package. This can
 // be overridden for testing though, so that timestamps are predictable.
+// TODO: Gernot might be more robust to use k8s server time
 var Timestamper = time.Now
 
 var (

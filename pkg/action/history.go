@@ -56,3 +56,20 @@ func (h *History) Run(name string) ([]*release.Release, error) {
 	h.cfg.Log("getting history for release %s", name)
 	return h.cfg.Releases.History(name)
 }
+
+// IsLocked
+// if the newest helm release in the history is currently being upgraded, it is locked
+// else it is not locked
+func (h *History) IsLocked(name string) (bool, error) {
+	last, err := h.cfg.Releases.Last(name)
+	if errors.Is(err, errors.Errorf("no revision for release %q", name)) {
+		return false, nil
+	}
+	if err != nil && err.Error() != "release: not found" {
+		return true, err
+	}
+	if last != nil {
+		return last.IsLocked(), nil
+	}
+	return false, nil
+}
