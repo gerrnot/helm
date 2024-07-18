@@ -115,7 +115,7 @@ func newListCmd(cfg *action.Configuration, out io.Writer) *cobra.Command {
 	f.StringVar(&client.TimeFormat, "time-format", "", `format time using golang time formatter. Example: --time-format "2006-01-02 15:04:05Z0700"`)
 	f.BoolVarP(&client.ByDate, "date", "d", false, "sort by release date")
 	f.BoolVarP(&client.SortReverse, "reverse", "r", false, "reverse the sort order")
-	f.BoolVarP(&client.All, "all", "a", false, "show all releases without any filter applied")
+	f.BoolVarP(&client.All, "all", "a", false, "show all releases (including all fields) without any filter applied")
 	f.BoolVar(&client.Uninstalled, "uninstalled", false, "show uninstalled releases (if 'helm uninstall --keep-history' was used)")
 	f.BoolVar(&client.Superseded, "superseded", false, "show superseded releases")
 	f.BoolVar(&client.Uninstalling, "uninstalling", false, "show releases that are currently being uninstalled")
@@ -140,6 +140,8 @@ type releaseElement struct {
 	Status     string `json:"status"`
 	Chart      string `json:"chart"`
 	AppVersion string `json:"app_version"`
+	LockedTill string `json:"locked_till"`
+	SessionID  string `json:"session_id"`
 }
 
 type releaseListWriter struct {
@@ -158,6 +160,8 @@ func newReleaseListWriter(releases []*release.Release, timeFormat string, noHead
 			Status:     r.Info.Status.String(),
 			Chart:      formatChartName(r.Chart),
 			AppVersion: formatAppVersion(r.Chart),
+			LockedTill: r.LockedTill.String(),
+			SessionID:  r.SessionID,
 		}
 
 		t := "-"
@@ -176,12 +180,29 @@ func newReleaseListWriter(releases []*release.Release, timeFormat string, noHead
 }
 
 func (r *releaseListWriter) WriteTable(out io.Writer) error {
+	return r.WriteTableV2(out, true)
+}
+
+// WriteTableV2
+// Wide shows all columns, but those are mostly interesting when debugging concurrency issues, so not interesting in 99%.
+// Nevertheless, helm ls -a will display those, while regular helm ls will not.
+func (r *releaseListWriter) WriteTableV2(out io.Writer, wide bool) error {
 	table := uitable.New()
+	var optionalWideHeadings []interface{}
+	var effectiveHeadings = []interface{}{"NAME", "NAMESPACE", "REVISION", "UPDATED", "STATUS", "CHART", "APP VERSION"}
+	if wide {
+		optionalWideHeadings = append(optionalWideHeadings, "LOCKED TILL", "SESSION ID")
+	}
+	effectiveHeadings = append(effectiveHeadings, optionalWideHeadings...)
 	if !r.noHeaders {
-		table.AddRow("NAME", "NAMESPACE", "REVISION", "UPDATED", "STATUS", "CHART", "APP VERSION")
+		table.AddRow(effectiveHeadings...)
 	}
 	for _, r := range r.releases {
-		table.AddRow(r.Name, r.Namespace, r.Revision, r.Updated, r.Status, r.Chart, r.AppVersion)
+		var effectiveColumns = []interface{}{r.Name, r.Namespace, r.Revision, r.Updated, r.Status, r.Chart, r.AppVersion}
+		if wide {
+			effectiveColumns = append(effectiveColumns, r.LockedTill, r.SessionID)
+		}
+		table.AddRow(effectiveColumns...)
 	}
 	return output.EncodeTable(out, table)
 }
