@@ -21,7 +21,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"k8s.io/apimachinery/pkg/util/uuid"
 	"net/url"
 	"os"
 	"path"
@@ -37,6 +36,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/cli-runtime/pkg/resource"
 	"sigs.k8s.io/yaml"
 
@@ -551,6 +551,9 @@ func (i *Install) availableName() error {
 // createRelease creates a new release object
 func (i *Install) createRelease(chrt *chart.Chart, rawVals map[string]interface{}, labels map[string]string) *release.Release {
 	ts := i.cfg.Now()
+	lockedTill := ts.Add(i.Timeout)
+	sessionID := string(uuid.NewUUID())
+	i.cfg.Log("creating a new release with sessionID: %s and lockedTill: %s", sessionID, lockedTill)
 	return &release.Release{
 		Name:      i.ReleaseName,
 		Namespace: i.Namespace,
@@ -563,8 +566,8 @@ func (i *Install) createRelease(chrt *chart.Chart, rawVals map[string]interface{
 		},
 		Version:    1,
 		Labels:     labels,
-		LockedTill: ts.Add(i.Timeout),
-		SessionID:  string(uuid.NewUUID()),
+		LockedTill: lockedTill,
+		SessionID:  sessionID,
 	}
 }
 

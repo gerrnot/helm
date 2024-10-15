@@ -284,6 +284,9 @@ func (u *Upgrade) prepareUpgrade(name string, chart *chart.Chart, vals map[strin
 	}
 
 	// Store an upgraded release.
+	lockedTill := Timestamper().Add(u.Timeout)
+	sessionID := string(uuid.NewUUID())
+	u.cfg.Log("upgrading release with sessionID: %s and lockedTill: %s", sessionID, lockedTill)
 	upgradedRelease := &release.Release{
 		Name:      name,
 		Namespace: currentRelease.Namespace,
@@ -299,8 +302,8 @@ func (u *Upgrade) prepareUpgrade(name string, chart *chart.Chart, vals map[strin
 		Manifest:   manifestDoc.String(),
 		Hooks:      hooks,
 		Labels:     mergeCustomLabels(lastRelease.Labels, u.Labels),
-		LockedTill: Timestamper().Add(u.Timeout),
-		SessionID:  string(uuid.NewUUID()),
+		LockedTill: lockedTill,
+		SessionID:  sessionID,
 	}
 
 	if len(notesTxt) > 0 {
