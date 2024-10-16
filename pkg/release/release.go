@@ -18,6 +18,8 @@ package release
 import (
 	"helm.sh/helm/v3/pkg/chart"
 	helmtime "helm.sh/helm/v3/pkg/time"
+	"log"
+	"time"
 )
 
 // Release describes a deployment of a chart, together with the chart
@@ -60,5 +62,13 @@ func (r *Release) SetStatus(status Status, msg string) {
 }
 
 func (r *Release) IsLocked() bool {
-	return r.LockedTill.After(helmtime.Now()) && r.Info.Status.IsPending()
+	now := helmtime.Now()
+	nilDate, err := helmtime.Parse(time.RFC3339, "0001-01-01T00:00:00Z")
+	if err != nil {
+		log.Fatalf("could not parse nilDate: %s", err)
+	}
+	lockedUntilValueInTheFuture := r.LockedTill.After(now)
+	lockedUntilValueNotSet := r.LockedTill == nilDate // only true the case for older clients
+	pending := r.Info.Status.IsPending()
+	return pending && lockedUntilValueInTheFuture || pending && lockedUntilValueNotSet
 }
